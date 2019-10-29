@@ -78,9 +78,13 @@ void *bfs(void *args) {
         }
         pthread_mutex_unlock(&params->mutexes[cur_vertex]);
     }
+
     for (int i = 0; i < can_create_threads; ++i) {
         pthread_join(threads[i], NULL);
     }
+    pthread_mutex_lock(params->thread_count_mutex);
+    params->max_thread_count += can_create_threads;
+    pthread_mutex_unlock(params->thread_count_mutex);
     v_destroy(&recount);
     free(new_params);
     pthread_exit(NULL);
@@ -114,10 +118,14 @@ int main() {
     for (int i = 0; i < n; ++i) {
         result[i] = -1;
     }
+
     pthread_mutex_t *mutexes = malloc(sizeof(pthread_mutex_t) * n);
     for (int i = 0; i < n; ++i) {
         pthread_mutex_init(&mutexes[i], NULL);
     }
+    pthread_mutex_t* thread_count_mutex = malloc(sizeof(pthread_mutex_t));
+    pthread_mutex_init(thread_count_mutex, NULL);
+
     printf("Enter vertex to start search\n");
     scanf("%ld", &vertex_number);
     while (vertex_number > n || vertex_number == 0) {
@@ -125,8 +133,6 @@ int main() {
         printf("Enter vertex to start search\n");
         scanf("%ld", &vertex_number);
     }
-    vertex_number--;
-    result[vertex_number] = 0;
     printf("Enter max thread count\n");
     scanf("%d", max_thread_count);
     while (*max_thread_count < 1) {
@@ -134,18 +140,22 @@ int main() {
         printf("Enter max thread count\n");
         scanf("%d", max_thread_count);
     }
-    pthread_mutex_t* thread_count_mutex = malloc(sizeof(pthread_mutex_t));
-    pthread_mutex_init(thread_count_mutex, NULL);
+
+    vertex_number--;
+    result[vertex_number] = 0;
     (*max_thread_count)--;
+
     thread_params parameters = (thread_params) {.max_thread_count = max_thread_count,
             .result = result,
             .current_vertex = vertex_number,
             .list = list,
             .mutexes = mutexes,
             .thread_count_mutex = thread_count_mutex};
+
     pthread_t first_thread;
     pthread_create(&first_thread, NULL, bfs, &parameters);
     pthread_join(first_thread, NULL);
+
     for (int i = 0; i < n; ++i) {
         printf("%d:%d ", i + 1, result[i]);
     }
