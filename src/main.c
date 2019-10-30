@@ -12,7 +12,7 @@ struct ThreadParams {
     int current_vertex;
     adjacency_list *list;
     int *max_thread_count;
-    pthread_mutex_t *mutexes;
+    pthread_mutex_t *mutex;
     int *result;
     pthread_mutex_t *thread_count_mutex;
 };
@@ -32,17 +32,18 @@ void *bfs(void *args) {
     thread_params* params = (thread_params*) args;
     vector recount;
     v_init(&recount);
-
+    pthread_mutex_lock(params->mutex);
     for (int i = 0; i < params->list->vecs[params->current_vertex].size; ++i) {
-        pthread_mutex_lock(&params->mutexes[i]);
+        
         int n_v = params->list->vecs[params->current_vertex].data[i].vertex_number;
         int n_vl = params->list->vecs[params->current_vertex].data[i].length;
         if (params->result[n_v] == -1 || params->result[n_v] > params->result[params->current_vertex] + n_vl) {
             params->result[n_v] = params->result[params->current_vertex] + n_vl;
             v_push(&recount, (pair){.vertex_number = n_v, .length = n_vl});
         }
-        pthread_mutex_unlock(&params->mutexes[i]);
+        
     }
+    pthread_mutex_unlock(params->mutex);
 
     pthread_mutex_lock(params->thread_count_mutex);
     int can_create_threads = min(*(params->max_thread_count), recount.size);
@@ -62,22 +63,22 @@ void *bfs(void *args) {
     for (int i = can_create_threads; i < recount.size; ++i) {
         q_push(&q, recount.data[i].vertex_number);
     }
+    pthread_mutex_lock(params->mutex);
     while (!q_empty(&q)) {
         int cur_vertex = q_pop(&q);
-        pthread_mutex_lock(&params->mutexes[cur_vertex]);
+        
         for (int i = 0; i < params->list->vecs[cur_vertex].size; ++i) {
             int neighbour_vertex = params->list->vecs[cur_vertex].data[i].vertex_number;
             int neighbour_distance = params->list->vecs[cur_vertex].data[i].length;
-            pthread_mutex_lock(&params->mutexes[neighbour_vertex]);
             if (params->result[neighbour_vertex] == -1 ||
                 params->result[neighbour_vertex] > params->result[cur_vertex] + neighbour_distance) {
                 params->result[neighbour_vertex] = params->result[cur_vertex] + neighbour_distance;
                 q_push(&q, neighbour_vertex);
             }
-            pthread_mutex_unlock(&params->mutexes[neighbour_vertex]);
         }
-        pthread_mutex_unlock(&params->mutexes[cur_vertex]);
+        
     }
+    pthread_mutex_unlock(params->mutex);
 
     for (int i = 0; i < can_create_threads; ++i) {
         pthread_join(threads[i], NULL);
@@ -119,10 +120,8 @@ int main() {
         result[i] = -1;
     }
 
-    pthread_mutex_t *mutexes = malloc(sizeof(pthread_mutex_t) * n);
-    for (int i = 0; i < n; ++i) {
-        pthread_mutex_init(&mutexes[i], NULL);
-    }
+    pthread_mutex_t *mutex = malloc(sizeof(pthread_mutex_t) * n);
+    pthread_mutex_init(mutex, NULL);
     pthread_mutex_t* thread_count_mutex = malloc(sizeof(pthread_mutex_t));
     pthread_mutex_init(thread_count_mutex, NULL);
 
@@ -149,7 +148,7 @@ int main() {
             .result = result,
             .current_vertex = vertex_number,
             .list = list,
-            .mutexes = mutexes,
+            .mutex = mutex,
             .thread_count_mutex = thread_count_mutex};
 
     pthread_t first_thread;
